@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 libc = "0.2.126"
 simple-matrix = "0.1"
+rand = "0.8.5"
+random_choice = "0.3.2"
