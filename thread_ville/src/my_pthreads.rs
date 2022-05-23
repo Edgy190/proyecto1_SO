@@ -73,11 +73,11 @@ impl MyPThread {
         self.dead_threads[self.curr_context as usize] = 1;
         self.total_tickets -= self.tickets[self.curr_context as usize];
         self.active_threads_aux -= 1;
-        self.timer_interrupt();//Selecciona el scheduler
+        self.interrupt();//Selecciona el scheduler
     }
 
     pub fn my_thread_yield(mut self) -> () {
-        self.timer_interrupt();//Selecciona el scheduler
+        self.interrupt();//Selecciona el scheduler
     }
 
     pub fn my_thread_join(mut self) -> () {}
@@ -161,7 +161,7 @@ impl MyPThread {
         }
     }
 
-    pub fn timer_interrupt(mut self) -> () {
+    pub fn interrupt(mut self) -> () {
         /*getcontext(&self.threads.signal_context);
         self.signal_context.uc_stack.ss_sp = self.threads.signal_stack;
         self.signal_context.uc_stack.ss_size = stacksize;
