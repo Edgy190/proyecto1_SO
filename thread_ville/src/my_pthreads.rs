@@ -1,59 +1,88 @@
 use rand::prelude::*;
 use libc::ucontext_t;
+use libc::setcontext;
+use libc::getcontext;
+use libc::makecontext;
+use libc::swapcontext;
+use libc::sigemptyset;
+use libc::malloc;
+
+//Definitions
+const number_threads: i32 = 100;
+const stacksize: usize = 4096;
+const intervalo: i32 = 100;
 
 pub struct MyPThread {
     //ucontext
-    pub priority: Vec<u32>,
-    pub priority_aux: Vec<u32>,
-    pub tickets: Vec<u32>,
-    pub dead_threads: Vec<u32>,
+    pub signal_context: ucontext_t,
+    pub threads: (vec![number_threads], ucontext_t),
+    pub current_thread: ucontext_t,
+    pub exit_context: ucontext_t,
+
+    //Variables [int]
+    pub priority: vec![number_threads],
+    pub priority_aux: vec![number_threads],
+    pub tickets: vec![number_threads],
+    pub dead_threads: vec![number_threads],
+
     //Variables int
     pub curr_context: u32,
     pub init: u32,
     pub active_threads: u32,
     pub active_threads_aux: u32,
     pub total_tickets: u32,
-    pub active_scheduler: u32
+    pub active_scheduler: u32,
 }
 
 impl MyPThread {
 ///////////////////////////////////////////////////////////////////////////////////////////////MyPThread methods
-    pub fn my_thread_create(mut self, mut funcion: &dyn Fn() -> (), mut args: &dyn Fn() -> (),
+//pub fn my_thread_create (mut self, mut funcion: &dyn Fn() -> (), mut args: &dyn Fn() -> (), mut tickets_sched: u32, mut priority_sched: u32) -> ()
+    pub fn my_thread_create(mut self, mut funcion: extern "C" fn() -> (), mut args: extern "C" fn() -> (),
                             mut tickets_sched: u32, mut priority_sched: u32) -> () {
         if self.init == 0 {
             //setup()
-        }/*
-            void *stack;
-            //Crea el contexto del hilo
-            ucontext_t *uc = &threads[active_threads];
-            getcontext(uc); //Inicializa el context
-            stack = malloc(STACKSIZE);
-            uc->uc_stack.ss_sp = stack;
-            uc->uc_stack.ss_size = STACKSIZE;
-            uc->uc_stack.ss_flags = 0;
-            uc->uc_link = &exitContext; //Se reinicia antes de volver hacer el context
-            sigemptyset(&uc->uc_sigmask);
-            printf("%s", uc);
-            makecontext(uc, function, 1, args);
-            //Setea los datos para los schedulers
-            tickets[active_threads] = tickets_sched; //Tickets del scheduler
-            priority[active_threads] = priority_sched; //Prioridad del scheduler
-            total_tickets+=tickets_sched;
-            active_threads++;
-            active_threads_aux++;
-            printf("Se creo un hilo de manera correcta");*/
+        }
+        let &stack;
+        let context: ucontext_t;
+        //Contexto del hilo
+        let uc = &self.threads[self.active_threads];
+        getcontext(uc); //Inicializa el context
+        let stack = malloc(stacksize);
+        uc = self.threads.uc_stack.ss_sp = stack;
+        uc = self.threads.uc_stack.ss_size = stacksize;
+        uc = self.threads.uc_stack.ss_flags = 0;
+        uc = self.threads.uc_link = &self.exit_context; //Se reinicia antes de volver hacer el contexto
+        
+        sigemptyset(self.threads.uc_sigmask);
+        makecontext(uc, funcion, 1, args);
+
+        /*sigemptyset(&uc->uc_sigmask);
+        printf("%s", uc); CODGIO EN C FUENTE*/
+
+        //Set para los schedulers
+        self.tickets[self.active_threads] = tickets_sched; //Tickets del scheduler
+        self.priority[self.active_threads] = priority_sched; //Prioridad del scheduler
+        self.total_tickets += tickets_sched;
+        self.active_threads += 1;
+        self.active_threads_aux += 1;
+
+        //print!("Se creo un hilo de manera correcta");
     }
 
     pub fn my_thread_end(mut self) -> () {
         self.dead_threads[self.curr_context as usize] = 1;
         self.total_tickets -= self.tickets[self.curr_context as usize];
         self.active_threads_aux -= 1;
-        self.timer_interrupt();//Seleccionar el scheduler
+        self.timer_interrupt();//Selecciona el scheduler
     }
 
     pub fn my_thread_yield(mut self) -> () {
-        self.timer_interrupt();//Seleccionar el scheduler
+        self.timer_interrupt();//Selecciona el scheduler
     }
+
+    pub fn my_thread_join(mut self) -> () {}
+
+    pub fn my_thread_detach(mut self) -> () {}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////Schedulers
     pub fn my_thread_chsched(mut self, scheduler: &mut str) -> () {
@@ -77,14 +106,15 @@ impl MyPThread {
                 }
             }
             self.curr_context = self.curr_context % self.active_threads;
-            //current_thread = &self.threads[self.curr_context];
-            //setcontext(current_thread);//Activa el nuevo hilo
+            let current_thread = &self.threads[self.curr_context];
+            setcontext(current_thread);//Activa el nuevo hilo
         }
     }
 
     pub fn sorteo(mut self) -> () {
         let mut random_number: u32 = rand::random();
         let mut aux_number: u32 = 0;
+        let current_thread;
         if self.active_threads_aux > 0{
             let winner: u32 = random_number % (self.total_tickets + 1);//Ganador
             aux_number = winner;
@@ -97,59 +127,59 @@ impl MyPThread {
                         }
                     }
                     self.curr_context = i;
-                    //current_thread = &threads[self.curr_context];
+                    current_thread = &self.threads[self.curr_context];
                     break;
                 }else{
                     self.tickets[i as usize] += 1;
                     self.total_tickets += 1;
                 }
             }
-            //setcontext(current_thread);//Activa el nuevo hilo
+            setcontext(current_thread);//Activa el nuevo hilo
         }
     }
     
     pub fn real(mut self) -> () {
-        /*int aux = -1;
-        if(active_threads_aux > 0){
-            int i;
-            for (i = 0; i < active_threads; i++) {//Busca el hilo de mayor prioridad que aun no haya finalizado
-                if(aux<priority[i]&&!deadThreads[i] && !priority_aux[i]){
-                    curcontext = i;
-                    aux = priority[i];
+        let mut aux_number: i32 = -1;
+        if self.active_threads_aux > 0 {
+            let mut i: u32 = 0;
+            for i in 0..self.active_threads {//Busca el hilo de mayor prioridad pendiente a finalizar
+                if aux_number < self.priority[i]&&!self.dead_threads[i] && !self.priority_aux[i] {
+                    self.curr_context = i;
+                    aux_number = self.priority[i];
                 }
             }
-            if(aux == -1){
-                for (i = 0; i < active_threads; i++) {
-                    priority_aux[i] = 0;
+            if aux_number == -1 {
+                for i in 0..self.active_threads {
+                    self.priority_aux[i] = 0;
                 }
-                real();
-            }else{
-                priority_aux[curcontext] = 1;//Hilo ya ejecutado
-                current_thread = &threads[curcontext];
+                self.real();
+            } else {
+                self.priority_aux[self.curr_context] = 1;//Hilo ejecutado
+                let current_thread = &self.threads[self.curr_context];
                 setcontext(current_thread); //Activa el nuevo hilo
             }
-        }*/
+        }
     }
 
     pub fn timer_interrupt(mut self) -> () {
-        /*getcontext(&signal_context);
-        signal_context.uc_stack.ss_sp = signal_stack;
-        signal_context.uc_stack.ss_size = STACKSIZE;
-        signal_context.uc_stack.ss_flags = 0;
-        sigemptyset(&signal_context.uc_sigmask);
+        /*getcontext(&self.threads.signal_context);
+        self.signal_context.uc_stack.ss_sp = self.threads.signal_stack;
+        self.signal_context.uc_stack.ss_size = stacksize;
+        self.signal_context.uc_stack.ss_flags = 0;
+        sigemptyset(&self.threads.signal_context.uc_sigmask);
         //Si es de round robin
-        if(active_sched == 0){
-            makecontext(&signal_context, scheduler, 1);
+        if self.active_scheduler == 0 {
+            makecontext(&self.threads.signal_context, &self.roundRobin(), 1);
         }
         //Si es de sorteo
-        if(active_sched == 1){
-            makecontext(&signal_context, sched_sorteo, 1);
+        if self.active_scheduler == 1 {
+            makecontext(&self.threads.signal_context, &self.sorteo(), 1);
         }
         //Si es de tiempo real
-        if(active_sched == 2){
-            makecontext(&signal_context, sched_real, 1);
+        if self.active_scheduler == 2 {
+            makecontext(&self.threads.signal_context, &self.sched_real(), 1);
         }
         //Cambia el context
-        swapcontext(current_thread,&signal_context);*/
+        swapcontext(&self.threads.current_thread, &self.threads.signal_context);*/
     }
 }
